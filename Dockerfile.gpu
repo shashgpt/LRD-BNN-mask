@@ -1,0 +1,3 @@
+FROM tensorflow/tensorflow:latest-gpu-jupyter
+
+RUN --mount=type=bind,source="$(pwd)",target=/mnt,gpus=all=it,rm=tensorflow/tensorflow:latest-gpu-jupyter bash
