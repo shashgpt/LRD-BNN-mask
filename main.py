@@ -3,38 +3,39 @@ from scripts.preprocess_dataset import Preprocess_dataset
 from scripts.train import Train
 
 
-def mask_unused_gpus(leave_unmasked=1):
-    """
-    return the gpu no. with highest available memory
-    """
-    COMMAND = "nvidia-smi --query-gpu=memory.free --format=csv"
-    try:
-        _output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
-        memory_free_info = _output_to_list(sp.check_output(COMMAND.split()))[1:]
-        memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
-        available_gpus = [i for i, x in enumerate(memory_free_values)]
-        if len(available_gpus) < leave_unmasked: raise ValueError('Found only %d usable GPUs in the system' % len(available_gpus))
-        gpu_with_highest_free_memory = 0
-        highest_free_memory = 0
-        for index, memory in enumerate(memory_free_values):
-            if memory > highest_free_memory:
-                highest_free_memory = memory
-                gpu_with_highest_free_memory = index
-        return str(gpu_with_highest_free_memory)
-    except Exception as e:
-        print('"nvidia-smi" is probably not installed. GPUs are not masked', e)
-# def set_cuda_device():
-#     device_no_with_highest_free_mem = None
-#     highest_free_memory = 0
-#     for device_no in range(torch.cuda.device_count()):
-#         nvmlInit()
-#         handle = nvmlDeviceGetHandleByIndex(device_no)
-#         info = nvmlDeviceGetMemoryInfo(handle)
-#         free_mem = info.free/1000000000
-#         if free_mem > highest_free_memory:
-#             highest_free_memory = free_mem
-#             device_no_with_highest_free_mem = device_no
-#     return device_no_with_highest_free_mem
+
+# def mask_unused_gpus(leave_unmasked=1):
+#     """
+#     return the gpu no. with highest available memory
+#     """
+#     COMMAND = "nvidia-smi --query-gpu=memory.free --format=csv"
+#     try:
+#         _output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
+#         memory_free_info = _output_to_list(sp.check_output(COMMAND.split()))[1:]
+#         memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
+#         available_gpus = [i for i, x in enumerate(memory_free_values)]
+#         if len(available_gpus) < leave_unmasked: raise ValueError('Found only %d usable GPUs in the system' % len(available_gpus))
+#         gpu_with_highest_free_memory = 0
+#         highest_free_memory = 0
+#         for index, memory in enumerate(memory_free_values):
+#             if memory > highest_free_memory:
+#                 highest_free_memory = memory
+#                 gpu_with_highest_free_memory = index
+#         return gpu_with_highest_free_memory
+#     except Exception as e:
+#         print('"nvidia-smi" is probably not installed. GPUs are not masked', e)
+def set_cuda_device():
+    device_no_with_highest_free_mem = None
+    highest_free_memory = 0
+    for device_no in range(torch.cuda.device_count()):
+        nvmlInit()
+        handle = nvmlDeviceGetHandleByIndex(device_no)
+        info = nvmlDeviceGetMemoryInfo(handle)
+        free_mem = info.free/1000000000
+        if free_mem > highest_free_memory:
+            highest_free_memory = free_mem
+            device_no_with_highest_free_mem = device_no
+    return device_no_with_highest_free_mem
 
 
 def main():
@@ -110,18 +111,18 @@ def main():
     os.environ['PYTHONHASHSEED']=str(args.seed_value)
     random.seed(args.seed_value)
     np.random.seed(args.seed_value)
-    tf.random.set_seed(args.seed_value)
+    # tf.random.set_seed(args.seed_value)
+    torch.manual_seed(args.seed_value)
 
     # set the runtime directory
     os.chdir(os.getcwd())
 
     # set the gpu device with limited memory growth
-    os.environ["CUDA_VISIBLE_DEVICES"] = mask_unused_gpus()
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    for gpu in gpus:
-        tf.config.experimental.set_memory_growth(gpu, True)
-    # os.environ["CUDA_VISIBLE_DEVICES"] = torch.device(set_cuda_device())
-    # torch.cuda.set_device(set_cuda_device())
+    # os.environ["CUDA_VISIBLE_DEVICES"] = str(mask_unused_gpus())
+    # gpus = tf.config.experimental.list_physical_devices('GPU')
+    # for gpu in gpus:
+    #     tf.config.experimental.set_memory_growth(gpu, True)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(set_cuda_device())
 
     # create input data
     preprocess_dataset_obj = Preprocess_dataset(args)
