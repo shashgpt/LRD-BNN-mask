@@ -44,6 +44,7 @@ class Word_vectors(object):
             2) Assign each token in every sentence a unique int value (unique in the entire dataset)
             3) Return a dictionary word_index[word] = unique int value
             """
+            ## Tensorflow code
             # if tf.executing_eagerly():
             #     # vectorize_layer = tf.keras.layers.TextVectorization(standardize=None, split='whitespace')
             #     vectorize_layer = tf.keras.layers.experimental.preprocessing.TextVectorization(standardize=None, split='whitespace')
@@ -60,10 +61,23 @@ class Word_vectors(object):
             #     vocab.insert(0, '')
             #     word_index = dict(zip(vocab, range(len(vocab))))
             #     return word_index
+
+            # # Manual Code
+            # vocab = set()
+            # for sentence in dataset["sentence"]:
+            #     tokens = sentence.split()
+            #     for token in tokens:
+            #         vocab.add(token)
+            # vocab = list(vocab)
+            # word_index = dict(zip(vocab, range(len(vocab))))
+            # return word_index
+
+            # Pytorch Code
+            tokenizer = torchtext.data.utils.get_tokenizer('basic_english')
             vocab = set()
             for sentence in dataset["sentence"]:
-                tokens = sentence.split()
-                for token in tokens:
+                tokenized_text = tokenizer(sentence)
+                for token in tokenized_text:
                     vocab.add(token)
             vocab = list(vocab)
             word_index = dict(zip(vocab, range(len(vocab))))

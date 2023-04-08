@@ -4,26 +4,6 @@ from scripts.train import Train
 
 
 
-# def mask_unused_gpus(leave_unmasked=1):
-#     """
-#     return the gpu no. with highest available memory
-#     """
-#     COMMAND = "nvidia-smi --query-gpu=memory.free --format=csv"
-#     try:
-#         _output_to_list = lambda x: x.decode('ascii').split('\n')[:-1]
-#         memory_free_info = _output_to_list(sp.check_output(COMMAND.split()))[1:]
-#         memory_free_values = [int(x.split()[0]) for i, x in enumerate(memory_free_info)]
-#         available_gpus = [i for i, x in enumerate(memory_free_values)]
-#         if len(available_gpus) < leave_unmasked: raise ValueError('Found only %d usable GPUs in the system' % len(available_gpus))
-#         gpu_with_highest_free_memory = 0
-#         highest_free_memory = 0
-#         for index, memory in enumerate(memory_free_values):
-#             if memory > highest_free_memory:
-#                 highest_free_memory = memory
-#                 gpu_with_highest_free_memory = index
-#         return gpu_with_highest_free_memory
-#     except Exception as e:
-#         print('"nvidia-smi" is probably not installed. GPUs are not masked', e)
 def set_cuda_device():
     device_no_with_highest_free_mem = None
     highest_free_memory = 0
@@ -123,6 +103,7 @@ def main():
     # for gpu in gpus:
     #     tf.config.experimental.set_memory_growth(gpu, True)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(set_cuda_device())
+
 
     # create input data
     preprocess_dataset_obj = Preprocess_dataset(args)

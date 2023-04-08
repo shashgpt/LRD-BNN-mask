@@ -1,6 +1,7 @@
 from scripts.all_imports import *
 
 
+
 DEVICE = torch.device(0)
 # Prior
 class ScaleMixtureGaussian(object):
@@ -9,8 +10,8 @@ class ScaleMixtureGaussian(object):
         self.pi = pi
         self.sigma1 = sigma1
         self.sigma2 = sigma2
-        self.gaussian1 = torch.distributions.Normal(0,sigma1)
-        self.gaussian2 = torch.distributions.Normal(0,sigma2)
+        self.gaussian1 = torch.distributions.Normal(0, sigma1)
+        self.gaussian2 = torch.distributions.Normal(0, sigma2)
     
     def log_prob(self, input): # Sum of log_prior_loss for each weight
         prob1 = torch.exp(self.gaussian1.log_prob(input))
@@ -81,7 +82,7 @@ class BayesianDense(torch.nn.Module):
             self.log_variational_posterior = self.weight.log_prob(weight) + self.bias.log_prob(bias)
         else:
             self.log_prior, self.log_variational_posterior = 0, 0
-        return torch.sigmoid(torch.nn.functional.linear(input, weight, bias))
+        return torch.nn.functional.linear(input, weight, bias)
 
 # Dataset
 class Dataset_batching(torch.utils.data.Dataset):
@@ -105,12 +106,12 @@ class BNN(torch.nn.Module):
         self.args = args
         word_vectors = torch.Tensor(word_vectors)
 
-        self.embedding = torch.nn.Embedding(word_vectors.shape[0], word_vectors.shape[1])
+        self.embedding = torch.nn.Embedding(word_vectors.shape[0], word_vectors.shape[1], padding_idx=0)
         self.embedding.load_state_dict({'weight': word_vectors})
         self.embedding.weight.requires_grad = self.args.fine_tune_word_embeddings
 
         self.lstm = torch.nn.LSTM(input_size = word_vectors.shape[1], hidden_size = self.args.sequence_layer_units, batch_first=True)
-        self.dense = BayesianDense(self.args.sequence_layer_units, 1)
+        self.dense = BayesianDense(self.args.sequence_layer_units, 2)
     
     def forward(self, input_data): # Forward Propagation
         word_embeddings = self.embedding(input_data)
@@ -142,68 +143,104 @@ class BNN(torch.nn.Module):
         # Epoch
         for epoch in range(1, self.args.train_epochs+1):
             
+            # batch the dataset
             train_dataset_batched = Dataset_batching(train_dataset[0], train_dataset[1], transform = None)
             train_loader = torch.utils.data.DataLoader(train_dataset_batched, batch_size = self.args.batch_size, shuffle=False)
+
             model.train()
             train_loss = 0.0
             num_train_correct  = 0
             num_train_examples = 0
             
             # Train iteration
-            for batch_idx, (input_data, target) in enumerate(tqdm(train_loader)):
+            train_pbar = trange(len(train_loader), position=0, leave=True, desc='Iteration')
+            for batch_idx in train_pbar:
                 
+                input_data, target = next(iter(train_loader))
                 input_data, target = input_data.to(DEVICE), target.to(DEVICE)
 
                 # Forward pass
-                model_outputs = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 1).to(DEVICE)
-                log_likelihoods = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 1).to(DEVICE)
+                model_outputs = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 2).to(DEVICE)
+                log_likelihoods = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 2).to(DEVICE)
                 log_priors = torch.zeros(self.args.num_of_bayesian_samples).to(DEVICE)
                 log_variational_posteriors = torch.zeros(self.args.num_of_bayesian_samples).to(DEVICE)
 
                 # Sampling
                 for sample in range(self.args.num_of_bayesian_samples):
-
-                    # Calculating log_likelihood per sample
-                    model_output = torch.log(self(input_data))
-                    model_outputs[sample] = model_output
-                    target = target.reshape(target.shape[0]).float()
-                    log_likelihoods[sample] = torch.matmul(target, model_output)
-
-                    # Calculate Priors and Posteriors
+                    model_outputs[sample] = torch.log_softmax(self(input_data), dim=1)
+                    ground_truth = torch.nn.functional.one_hot(target)
+                    log_likelihoods[sample] = torch.mul(ground_truth, model_outputs[sample])
                     log_priors[sample] = self.log_prior()
                     log_variational_posteriors[sample] = self.log_variational_posterior()
                 
-                # Averaging over samples
-                log_likelihood = log_likelihoods.mean(0)
-                model_output_mean = model_outputs.mean(0)
-                model_uncertainty = torch.sum(model_outputs, dim=1)/self.args.num_of_bayesian_samples
                 log_prior = log_priors.mean()
                 log_variational_posterior = log_variational_posteriors.mean()
-
-                # Calculating the ELBO
-                complexity_loss = (log_variational_posterior - log_prior)/self.args.batch_size
+                log_likelihood = log_likelihoods.mean(0)
                 negative_log_likelihood = -torch.sum(torch.sum(log_likelihood, dim=1))
-                data_dependent_loss = negative_log_likelihood
-                loss = complexity_loss + data_dependent_loss
+                loss = (log_variational_posterior - log_prior)/len(train_loader) + negative_log_likelihood
 
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
-                train_loss += loss.data.item() * input_data.size(0)
-                num_train_correct  += (torch.max(model_output_mean, 1)[1] == target).sum().item()
+                train_loss += loss.data.item()
+
+                pred = model_outputs.mean(0).max(1, keepdim=True)[1]
+                num_train_correct += pred.eq(target.view_as(pred)).sum().item()
                 num_train_examples += input_data.shape[0]
                 train_acc = num_train_correct / num_train_examples
+
                 train_loss = train_loss / len(train_loader.dataset)
                 history['loss'].append(train_loss)
                 history['accuracy'].append(train_acc)
-                history['uncertainty'].append(model_uncertainty)
+                
+                train_pbar.set_description('train loss: %g, train acc: %g' % (train_loss, train_acc))
 
-                if epoch % 1 == 0:
-                    print("\nEpoch %3d/%3d, train loss: %5.2f, train acc: %5.2f" % \
-                        (epoch, 10, train_loss, train_acc))
+            # Val Iteration
+            model.eval()
+            val_loss = 0.0
+            num_val_correct  = 0
+            num_val_examples = 0
 
+            val_dataset_batched = Dataset_batching(val_dataset[0], val_dataset[1], transform = None)
+            val_loader = torch.utils.data.DataLoader(val_dataset_batched, batch_size = self.args.batch_size, shuffle=False)
 
+            val_pbar = trange(len(val_loader), position=0, leave=True, desc='Iteration')
+            with torch.no_grad():
+                for batch_idx in val_pbar:
+                    input_data, target = next(iter(val_loader))
+                    input_data, target = input_data.to(DEVICE), target.to(DEVICE)
+
+                    # Forward pass
+                    model_outputs = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 2).to(DEVICE)
+                    log_likelihoods = torch.zeros(self.args.num_of_bayesian_samples, input_data.shape[0], 2).to(DEVICE)
+                    log_priors = torch.zeros(self.args.num_of_bayesian_samples).to(DEVICE)
+                    log_variational_posteriors = torch.zeros(self.args.num_of_bayesian_samples).to(DEVICE)
+
+                    # Sampling
+                    for sample in range(self.args.num_of_bayesian_samples):
+                        model_outputs[sample] = torch.log_softmax(self(input_data), dim=1)
+                        ground_truth = torch.nn.functional.one_hot(target)
+                        log_likelihoods[sample] = torch.mul(ground_truth, model_outputs[sample])
+                        log_priors[sample] = self.log_prior()
+                        log_variational_posteriors[sample] = self.log_variational_posterior()
+                    
+                    log_prior = log_priors.mean()
+                    log_variational_posterior = log_variational_posteriors.mean()
+                    log_likelihood = log_likelihoods.mean(0)
+                    negative_log_likelihood = -torch.sum(torch.sum(log_likelihood, dim=1))
+                    loss = (log_variational_posterior - log_prior)/len(val_loader) + negative_log_likelihood
+
+                    val_loss += loss.data.item()
+
+                    pred = model_outputs.mean(0).max(1, keepdim=True)[1]
+                    num_val_correct += pred.eq(target.view_as(pred)).sum().item()
+                    num_val_examples += input_data.shape[0]
+                    val_acc = num_val_correct / num_val_examples
+
+                    val_loss = val_loss / len(val_loader.dataset)
+                    
+                    val_pbar.set_description('val loss: %g, val acc: %g' % (val_loss, val_acc))
                 
 
 
