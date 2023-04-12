@@ -4,6 +4,7 @@ from scripts.train_scripts.word_vectors import Word_vectors
 from scripts.train_scripts.models.bnsm import *
 
 
+
 DEVICE = torch.device(0)
 class Train(object):
     def __init__(self, args) -> None:
@@ -18,6 +19,7 @@ class Train(object):
         # Pytorch code
         tokenizer = torchtext.data.utils.get_tokenizer('basic_english')
         vocab = torchtext.vocab.vocab(word_index)
+        vocab.set_default_index(0)
         max_sent_len = 0
         encoded_tokenized_sentences = []
         for sentence in sentences:
@@ -32,19 +34,19 @@ class Train(object):
         encoded_tokenized_sentences = np.array(encoded_tokenized_sentences)
         return encoded_tokenized_sentences
 
-
     def train_model(self, preprocessed_dataset: dict):
 
-        # create word embeddings
-        if os.path.exists(self.args.dataset_dir+self.args.word_embeddings+".npy") and os.path.exists(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle"):
-            word_vectors = np.load(open(self.args.dataset_dir+self.args.word_embeddings+".npy", "rb"))
-            word_index = pickle.load(open(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle", "rb"))
-        else:
-            word_vectors, word_index = Word_vectors(self.args).create_word_vectors(preprocessed_dataset)
-            with open(self.args.dataset_dir+self.args.word_embeddings+".npy", "wb") as handle:
-                np.save(handle, word_vectors)
-            with open(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle", "wb") as handle:
-                pickle.dump(word_index, handle)
+        # # create word embeddings
+        # if os.path.exists(self.args.dataset_dir+self.args.word_embeddings+".npy") and os.path.exists(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle"):
+        #     word_vectors = np.load(open(self.args.dataset_dir+self.args.word_embeddings+".npy", "rb"))
+        #     word_index = pickle.load(open(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle", "rb"))
+        # else:
+        #     word_vectors, word_index = Word_vectors(self.args).create_word_vectors(preprocessed_dataset)
+        #     with open(self.args.dataset_dir+self.args.word_embeddings+".npy", "wb") as handle:
+        #         np.save(handle, word_vectors)
+        #     with open(self.args.dataset_dir+self.args.word_embeddings+"_word_index.pickle", "wb") as handle:
+        #         pickle.dump(word_index, handle)
+        word_vectors, word_index = Word_vectors(self.args).create_word_vectors(preprocessed_dataset)
 
         # create train, val and test_dataset
         train_dataset, val_dataset, test_dataset = Dataset_division(self.args).train_val_test_split(preprocessed_dataset, divide_into_rule_sections=True)
@@ -63,7 +65,7 @@ class Train(object):
             model.fit(train_dataset, val_dataset, model, optimizer)
     
         # save the model
-
+        
     
     # def evaluate_model(self, preprocessed_dataset: dict):
 
